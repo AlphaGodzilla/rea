@@ -319,6 +319,11 @@ export const documentationSections = [
         route: "/ghidra-riscv",
       },
       {
+        text: "SBPF ELF analysis through Ghidra",
+        source: "providers/ghidra-sbpf.md",
+        route: "/ghidra-sbpf",
+      },
+      {
         text: "Windows Ghidra P0",
         source: "providers/windows-ghidra-p0.md",
         route: "/windows-ghidra-p0",
