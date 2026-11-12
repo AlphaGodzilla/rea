@@ -245,6 +245,8 @@ export interface GhidraHeadlessLauncherOptions {
     readonly compilerSpecId?: string;
     readonly sectionFile: string;
   };
+  /** Resolve SBPF call relocations before default auto-analysis. */
+  readonly sbpf?: true;
   /** Explicit import language committed by the analysis profile. */
   readonly languageOverride?: GhidraLanguageOverride;
   /** Auto-analyzers disabled before default auto-analysis, as configured. */
@@ -469,6 +471,7 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
                 sectionFilePath: gamecubeDolSectionPath,
               },
             }),
+        ...(this.options.sbpf === undefined ? {} : { sbpf: this.options.sbpf }),
         ...(this.options.languageOverride === undefined
           ? {}
           : { languageOverride: this.options.languageOverride }),
@@ -809,6 +812,8 @@ export interface GhidraHeadlessArgumentOptions {
     readonly compilerSpecId?: string;
     readonly sectionFilePath: string;
   };
+  /** Resolve SBPF call relocations before default auto-analysis. */
+  readonly sbpf?: true;
   readonly languageOverride?: GhidraLanguageOverride;
   /** Auto-analyzers disabled by the pre-analysis options script. */
   readonly disabledAnalyzers?: readonly string[];
@@ -824,6 +829,7 @@ type ExistingProjectOptions = Pick<
   | "dosMz"
   | "dosCom"
   | "rawBinary"
+  | "sbpf"
   | "languageOverride"
   | "mipsSoftFloat"
   | "riscvCallingConvention"
@@ -851,6 +857,8 @@ const validateExistingProjectOptions = (
       throw new GhidraAdmissionError("existing_project_dos");
     if (rawBinary !== undefined)
       throw new GhidraAdmissionError("existing_project_raw_binary");
+    if (options.sbpf === true)
+      throw new GhidraAdmissionError("existing_project_sbpf");
     if (override !== undefined)
       throw new GhidraAdmissionError("existing_project_language_override");
     if (options.mipsSoftFloat === true)
@@ -893,6 +901,18 @@ export const ghidraHeadlessArguments = (
       override !== undefined)
   )
     throw new GhidraAdmissionError("gamecube_dol_combined");
+  // SBPF preparation is an ELF-loader step and owns no other lane's selection.
+  if (
+    options.sbpf === true &&
+    (options.psp === true ||
+      options.dosMz === true ||
+      options.dosCom === true ||
+      options.mipsSoftFloat === true ||
+      options.riscvCallingConvention !== undefined ||
+      rawBinary !== undefined ||
+      gamecubeDol !== undefined)
+  )
+    throw new GhidraAdmissionError("sbpf_combined");
   if (
     options.psp === true &&
     (options.dosMz === true ||
@@ -1038,6 +1058,14 @@ export const ghidraHeadlessArguments = (
           scriptPath.join(bridgeDirectory, GHIDRA_BRIDGE_SOURCES.prepareDol),
           gamecubeDol.sectionFilePath,
         ]),
+    // SBPF call relocations are memory and listing changes the loader cannot
+    // apply, so they run as loader preparation before any analysis.
+    ...(options.sbpf === true
+      ? [
+          "-preScript",
+          scriptPath.join(bridgeDirectory, GHIDRA_BRIDGE_SOURCES.prepareSbfp),
+        ]
+      : []),
     // Seeds follow any loader preparation and precede default auto-analysis.
     ...(options.seedPath === undefined
       ? []

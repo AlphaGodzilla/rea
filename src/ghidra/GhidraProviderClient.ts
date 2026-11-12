@@ -639,6 +639,9 @@ export const createGhidraProviderClient = (input: {
         : { riscvCallingConvention }),
       ...(target.format === "dos-mz" ? { dosMz: true } : {}),
       ...(target.format === "dos-com" ? { dosCom: true } : {}),
+      ...(target.format === "elf" && target.architecture === "sbpf"
+        ? { sbpf: true as const }
+        : {}),
       ...(rawLanguage === undefined || target.format !== "raw-binary"
         ? {}
         : {
