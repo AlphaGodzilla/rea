@@ -1,9 +1,12 @@
 import ghidra.app.script.GhidraScript;
 import ghidra.program.disassemble.Disassembler;
+import ghidra.util.exception.InvalidInputException;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
+import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.Symbol;
 import ghidra.program.model.symbol.SymbolIterator;
 
@@ -62,6 +65,7 @@ public final class ReaGhidraPrepareSbfp extends GhidraScript {
 
         int syscalls = 0;
         int internal = 0;
+        int namedByHash = 0;
         for (int offset = 0; offset + RELOCATION_ENTRY_BYTES <= relocations.length;
              offset += RELOCATION_ENTRY_BYTES) {
             long target = readU64(relocations, offset);
@@ -101,16 +105,25 @@ public final class ReaGhidraPrepareSbfp extends GhidraScript {
             instruction[0] = (byte) CALL_OPCODE;
             long immediate;
             if (sectionIndex == 0) {
-                Long hash = syscallByName.get(name);
-                if (hash == null) {
-                    throw new IllegalArgumentException(
-                        "System call " + name + " at 0x" + Long.toHexString(target) +
-                        " is not declared by language " + languageId +
-                        "; add it to the processor module's processor specification"
-                    );
+                Long declared = syscallByName.get(name);
+                if (declared == null) {
+                    // The loader names a syscall by the same murmur3 hash of its
+                    // symbol name, so an undeclared one is still exact: name the
+                    // address it targets so the call graph and pseudocode keep it.
+                    long computed = murmur3_32(name);
+                    nameSyscall(computed, name);
+                    instruction[1] = (byte) SYSCALL_CALL_NIBBLES;
+                    immediate = computed;
+                    namedByHash++;
+                    syscalls++;
+                    writeImmediate32(instruction, immediate);
+                    currentProgram.getListing().clearCodeUnits(site, site.add(7), false);
+                    memory.setBytes(site, instruction);
+                    disassembler.disassemble(site, null);
+                    continue;
                 }
                 instruction[1] = (byte) SYSCALL_CALL_NIBBLES;
-                immediate = hash;
+                immediate = declared;
                 syscalls++;
             } else {
                 // Internal calls keep the relative encoding the producer emits:
@@ -136,10 +149,71 @@ public final class ReaGhidraPrepareSbfp extends GhidraScript {
         currentProgram.getOptions(Program.PROGRAM_INFO).setBoolean(PREPARED_FLAG, true);
         currentProgram.getOptions(Program.PROGRAM_INFO).setInt("REA sbpf syscalls", syscalls);
         currentProgram.getOptions(Program.PROGRAM_INFO).setInt("REA sbpf internal calls", internal);
-        println("REA sbpf: resolved " + syscalls + " system calls and " + internal +
-            " internal calls");
+        currentProgram.getOptions(Program.PROGRAM_INFO).setInt(
+            "REA sbpf syscalls named by hash", namedByHash);
+        println("REA sbpf: resolved " + syscalls + " system calls (" + namedByHash +
+            " not declared by the language) and " + internal + " internal calls");
     }
 
+    /**
+     * Name a syscall address the loaded language does not declare, so the call
+     * renders as the symbol the ELF imports rather than a bare hash.
+     */
+    private void nameSyscall(long offset, String name) throws InvalidInputException {
+        AddressSpace space =
+            currentProgram.getAddressFactory().getAddressSpace(SYSCALL_SPACE);
+        if (space == null) {
+            return;
+        }
+        Address address = space.getAddress(offset);
+        if (currentProgram.getSymbolTable().getPrimarySymbol(address) != null) {
+            return;
+        }
+        currentProgram.getSymbolTable().createLabel(address, name, SourceType.IMPORTED);
+    }
+
+    /** The 32-bit murmur3 hash the SBPF loader uses to identify a system call. */
+    private static long murmur3_32(String name) {
+        byte[] data = name.getBytes(StandardCharsets.UTF_8);
+        final long c1 = 0xcc9e2d51L;
+        final long c2 = 0x1b873593L;
+        long hash = 0;
+        int blocks = data.length / 4;
+        for (int index = 0; index < blocks; index++) {
+            int base = index * 4;
+            long k = (data[base] & 0xffL) | ((data[base + 1] & 0xffL) << 8) |
+                ((data[base + 2] & 0xffL) << 16) | ((data[base + 3] & 0xffL) << 24);
+            k = (k * c1) & 0xffffffffL;
+            k = ((k << 15) | (k >>> 17)) & 0xffffffffL;
+            k = (k * c2) & 0xffffffffL;
+            hash ^= k;
+            hash = ((hash << 13) | (hash >>> 19)) & 0xffffffffL;
+            hash = (hash * 5 + 0xe6546b64L) & 0xffffffffL;
+        }
+        int tailStart = blocks * 4;
+        int remaining = data.length - tailStart;
+        long tail = 0;
+        if (remaining >= 3) {
+            tail ^= (data[tailStart + 2] & 0xffL) << 16;
+        }
+        if (remaining >= 2) {
+            tail ^= (data[tailStart + 1] & 0xffL) << 8;
+        }
+        if (remaining >= 1) {
+            tail ^= data[tailStart] & 0xffL;
+            tail = (tail * c1) & 0xffffffffL;
+            tail = ((tail << 15) | (tail >>> 17)) & 0xffffffffL;
+            tail = (tail * c2) & 0xffffffffL;
+            hash ^= tail;
+        }
+        hash ^= data.length;
+        hash ^= hash >>> 16;
+        hash = (hash * 0x85ebca6bL) & 0xffffffffL;
+        hash ^= hash >>> 13;
+        hash = (hash * 0xc2b2ae35L) & 0xffffffffL;
+        hash ^= hash >>> 16;
+        return hash;
+    }
     private Map<String, Long> syscallAddresses() {
         Map<String, Long> byName = new HashMap<>();
         SymbolIterator symbols = currentProgram.getSymbolTable().getAllSymbols(true);

@@ -36,9 +36,11 @@ language exists for them.
 Call relocations are resolved by a loader-preparation script
 (`ReaGhidraPrepareSbfp.java`) that runs before default auto-analysis. It reads
 `.rel.dyn` from the imported program, resolves undefined symbols against the
-`syscall` address space the language declares, and fails the import when a
-system call is not declared. `R_BPF_64_RELATIVE` entries are left untouched:
-their addends already hold section-relative virtual addresses.
+`syscall` address space the language declares. A system call the module does not
+declare is named by the same 32-bit murmur3 hash of its symbol name that the
+loader uses, so the lane does not depend on the module's table staying current.
+`R_BPF_64_RELATIVE` entries are left untouched: their addends already hold
+section-relative virtual addresses.
 
 An installation without the required languages is refused during profile
 resolution with `REA_GHIDRA_SBPF_MODULE` as the offending setting.
