@@ -17,6 +17,10 @@ import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import type { AnalysisError } from "../domain/analysisErrorBase.js";
 import { err, ok, type Result } from "../domain/result.js";
 import { ghidraDisabledAnalyzerPreset } from "./GhidraDisabledAnalyzers.js";
+import {
+  ghidraSbfpLanguage,
+  ghidraSbfpProfileParameters,
+} from "./GhidraSbfpProfile.js";
 import type { GhidraInstallationInspection } from "./GhidraInstallation.js";
 import {
   isLegacyMipsAdmission,
@@ -87,7 +91,8 @@ export const ghidraPinnedLanguage = (
 ): GhidraLanguageOverride | undefined =>
   ghidraMipsLanguageOverride(target) ??
   ghidraRiscvLanguageOverride(target) ??
-  ghidraPowerPcLanguage(target);
+  ghidraPowerPcLanguage(target) ??
+  ghidraSbfpLanguage(target);
 
 /** Policy conflicts belong to the selected settings, not to the target's support. */
 const languageOverrideConflict = (
@@ -381,6 +386,7 @@ export const resolveGhidraAnalysisProfile = async (
         ...ghidraMipsProfileParameters(target, languageOverride),
         ...ghidraRiscvProfileParameters(target),
         ...ghidraPowerPcProfileParameters(target),
+        ...ghidraSbfpProfileParameters(target),
         ...(pspExtension?.ok === true
           ? {
               mips_support_lane: "psp-elf32-exec-eabi32-allegrex-v2",

@@ -79,6 +79,11 @@ import {
   ghidraProcessorUnsupportedReason,
   isGhidraPspTarget,
 } from "./GhidraPspProfile.js";
+import {
+  GHIDRA_SBPF_MODULE_PATH,
+  GHIDRA_SBPF_MODULE_REMEDIATION,
+  ghidraSbfpLanguage,
+} from "./GhidraSbfpProfile.js";
 import { resolveGhidraExtensions } from "./extensions/GhidraExtensions.js";
 import { GHIDRA_PROVIDER_IDENTITY } from "./GhidraProviderMetadata.js";
 import {
@@ -103,6 +108,7 @@ const SUPPORTED_ARCHITECTURES = new Set<BinaryArchitecture>([
   "powerpc",
   "m68k",
   "hexagon",
+  "sbpf",
 ]);
 
 /** Names every admitted family, so the refusal cannot drift from the set. */
@@ -464,6 +470,42 @@ export class GhidraProvider implements AnalysisProviderCandidate {
       this.config.ghidraDisabledAnalyzers,
     );
     if (!resolved.ok || resolved.value.profile === null) return resolved;
+    if (
+      target.kind === "executable" &&
+      target.architecture === "sbpf" &&
+      installation.status === "available"
+    ) {
+      // The sBPF languages ship with a processor module, not with Ghidra. Refuse
+      // an installation that cannot import this image before analysis starts.
+      const language = ghidraSbfpLanguage(target);
+      if (language !== undefined) {
+        let catalog: Awaited<ReturnType<typeof readGhidraLanguageCatalog>>;
+        try {
+          catalog = await readGhidraLanguageCatalog(
+            installation.installDir,
+            this.#inspectionResources,
+            options?.signal,
+          );
+        } catch (cause: unknown) {
+          return err(
+            ghidraFileFailure(cause, "resolve_analysis_profile", {
+              setting: "GHIDRA_INSTALL_DIR",
+            }),
+          );
+        }
+        if (!catalog.some((value) => value.id === language.languageId))
+          return err(
+            new ConfigurationError(GHIDRA_SBPF_MODULE_REMEDIATION, {
+              settings: [
+                {
+                  setting: "GHIDRA_INSTALL_DIR",
+                  constraint: `defines no ${language.languageId} language under ${GHIDRA_SBPF_MODULE_PATH}`,
+                },
+              ],
+            }),
+          );
+      }
+    }
     const override = this.config.ghidraLanguageOverride;
     if (override !== undefined && installation.status === "available") {
       let catalog: Awaited<ReturnType<typeof readGhidraLanguageCatalog>>;
