@@ -1,4 +1,5 @@
 import type { DolHeader } from "./gamecubeDol.js";
+import type { SbpfDeclaredVersion } from "./sbpfVersion.js";
 import type { ZipPackageFormat } from "./zipPackageFormat.js";
 
 /** Provider-neutral CPU families detected from headers or explicitly selected raw loads. */
@@ -14,6 +15,7 @@ export const BINARY_ARCHITECTURES = [
   "powerpc",
   "m68k",
   "hexagon",
+  "sbpf",
 ] as const;
 export type BinaryArchitecture = (typeof BINARY_ARCHITECTURES)[number];
 
@@ -52,6 +54,7 @@ export const ELF_METADATA_ARCHITECTURES = [
   "mips",
   "riscv",
   "powerpc",
+  "sbpf",
 ] as const satisfies readonly BinaryArchitecture[];
 export type ElfMetadataArchitecture =
   (typeof ELF_METADATA_ARCHITECTURES)[number];
@@ -91,6 +94,11 @@ export interface MipsElfMetadata extends ElfFamilyMetadata {
 export interface RiscvElfMetadata extends ElfFamilyMetadata {
   /** Undefined until `.riscv.attributes` is inspected. */
   readonly isa?: RiscvIsaDeclaration;
+}
+
+/** Raw ELF facts plus the SBPF version the header declares in `e_flags`. */
+export interface SbpfElfMetadata extends ElfFamilyMetadata {
+  readonly version: SbpfDeclaredVersion;
 }
 
 /** The ISA an image declares in `.riscv.attributes`; not proof of every instruction. */
@@ -201,6 +209,16 @@ export type BinaryTarget =
       readonly availableArchitectures: readonly "powerpc"[];
       /** Family identity does not select a processor variant. */
       readonly powerpc: ElfFamilyMetadata;
+      readonly executableRole?: never;
+      readonly managed?: never;
+    })
+  | (BinaryTargetIdentity & {
+      readonly kind: "executable";
+      readonly format: "elf";
+      readonly architecture: "sbpf";
+      readonly availableArchitectures: readonly "sbpf"[];
+      /** Declared instruction-set version; it selects the Ghidra language. */
+      readonly sbpf: SbpfElfMetadata;
       readonly executableRole?: never;
       readonly managed?: never;
     })

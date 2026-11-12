@@ -9,10 +9,12 @@ import type {
   MipsElfMetadata,
   PeCodeViewRecord,
   RiscvElfMetadata,
+  SbpfElfMetadata,
   UniversalMachOSlice,
   UniversalMachOSliceIdentity,
 } from "./binaryTargetTypes.js";
 import { err, ok, type Result } from "./result.js";
+import { sbpfVersionFromElfFlags } from "./sbpfVersion.js";
 import {
   readPeOptionalHeaderFixedFields,
   readPeOptionalHeaderDirectory,
@@ -57,6 +59,12 @@ export type ExecutableMetadata =
       readonly architecture: "riscv";
       readonly availableArchitectures: readonly "riscv"[];
       readonly riscv: RiscvElfMetadata;
+    }
+  | {
+      readonly format: "elf";
+      readonly architecture: "sbpf";
+      readonly availableArchitectures: readonly "sbpf"[];
+      readonly sbpf: SbpfElfMetadata;
     }
   | {
       readonly format: "elf";
@@ -460,6 +468,19 @@ const parseElf = (
     fixedHeader.value;
   if (architecture === null)
     return err(`unsupported ELF architecture: e_machine ${String(machine)}`);
+  if (architecture === "sbpf")
+    return ok({
+      format: "elf",
+      architecture,
+      availableArchitectures: [architecture],
+      sbpf: {
+        elfClass,
+        byteOrder,
+        type,
+        flags,
+        version: sbpfVersionFromElfFlags(flags),
+      },
+    });
   if (
     architecture === "mips" ||
     architecture === "riscv" ||

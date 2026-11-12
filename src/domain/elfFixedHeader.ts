@@ -134,6 +134,10 @@ export const elfArchitecture = (
       return "arm64";
     case 243: // EM_RISCV: XLEN, byte order and e_flags remain separate ELF facts.
       return "riscv";
+    case 247: // EM_BPF: the deployed SBF/sBPF program family (SBPF v0-v2 era).
+      return "sbpf";
+    case 263: // EM_SBF: the machine id current sbpf toolchains emit for SBPF v3+.
+      return "sbpf";
   }
   return undefined;
 };
